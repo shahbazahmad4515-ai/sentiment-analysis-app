@@ -9,8 +9,7 @@ st.set_page_config(
     layout="centered"
 )
 
-# 2. LOAD MODEL (With Caching)
-# We use @st.cache_resource so it downloads the model only once
+# 2. LOAD MODEL
 @st.cache_resource
 def load_model():
     model_path = "shahbazahmadshahbazahmad/bert-finetuned-encoder"
@@ -21,57 +20,60 @@ def load_model():
     except Exception as e:
         return None, str(e)
 
-# Load the model immediately when app starts
-with st.spinner("Downloading Model from Hugging Face... This may take a minute..."):
+with st.spinner("Downloading Model..."):
     tokenizer, model = load_model()
 
 # 3. SENTIMENT MAPPING
-# Ensure this matches your training labels!
+# Based on your training snippet:
+# 0 -> Negative
+# 1 -> Neutral/Irrelevant
+# 2 -> Positive
 labels_map = {
     0: "Negative",
-    1: "Neutral",
+    1: "Negative", # We treat Neutral/Irrelevant as Negative to keep strict Binary output
     2: "Positive"
 }
 
 # 4. USER INTERFACE
 st.title("🧠 AI Sentiment Analyzer")
-st.markdown("Type a sentence below, and the AI will detect if the emotion is **Positive**, **Negative**, or **Neutral**.")
+st.markdown("Type a sentence below to detect if it is **Positive** or **Negative**." \
+"It will show **Neutral** sentence as **Negative**")
 
 # Input Box
-user_input = st.text_area("Enter text here:", height=150, placeholder="e.g., The food was amazing but the service was slow.")
+user_input = st.text_area("Enter text here:", height=150, placeholder="e.g., The food was amazing!")
 
 # Analyze Button
 if st.button("Analyze Sentiment"):
     if not user_input.strip():
         st.warning("Please enter some text first.")
-    elif isinstance(model, str): # Check if model failed to load
+    elif isinstance(model, str):
         st.error(f"Error loading model: {model}")
     else:
         with st.spinner("Analyzing..."):
-            # A. Tokenize
             inputs = tokenizer(user_input, return_tensors="pt", truncation=True, padding=True)
             
-            # B. Predict
             with torch.no_grad():
                 outputs = model(**inputs)
             
-            # C. Get the highest probability class
             logits = outputs.logits
             prediction_id = logits.argmax().item()
+            
+            # Get label from our map
             sentiment = labels_map.get(prediction_id, "Unknown")
             
-            # D. Display Result with Colors
+            # D. Display Result
             st.divider()
             st.subheader("Analysis Result:")
             
-            if prediction_id == 0: # Negative
-                st.error(f"😡 **{sentiment}**")
-            elif prediction_id == 2: # Positive
+            # Logic: If it is Class 2, it is Positive (Green)
+            if prediction_id == 2:
                 st.success(f"😃 **{sentiment}**")
-            else: # Neutral (1)
-                st.info(f"😐 **{sentiment}**")
-
+            
+            # Logic: If it is Class 0 OR 1, it is Negative (Red)
+            else:
+                st.error(f"😡 **{sentiment}**")
+                
 # Sidebar Info
-st.sidebar.info("Model: BERT Finetuned Encoder")
-st.sidebar.text("Task: Sentiment Classification")
+st.sidebar.info("Model: BERT Finetuned")
+st.sidebar.text("Classes: Positive / Negative")
 st.sidebar.markdown("[View on Hugging Face](https://huggingface.co/shahbazahmadshahbazahmad/bert-finetuned-encoder)")
