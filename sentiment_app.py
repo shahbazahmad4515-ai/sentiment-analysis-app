@@ -14,23 +14,34 @@ st.set_page_config(
 def load_model():
     model_path = "shahbazahmadshahbazahmad/bert-finetuned-encoder"
     try:
+        # Load Tokenizer
         tokenizer = AutoTokenizer.from_pretrained(model_path)
-        model = AutoModelForSequenceClassification.from_pretrained(model_path)
+        
+        # Load Model with memory optimizations
+        # low_cpu_mem_usage=True requires the 'accelerate' library
+        model = AutoModelForSequenceClassification.from_pretrained(
+            model_path,
+            low_cpu_mem_usage=True,
+            ignore_mismatched_sizes=True
+        )
+        
+        # Force CPU to ensure no GPU memory is requested
+        device = torch.device("cpu")
+        model.to(device)
+        
         return tokenizer, model
     except Exception as e:
+        print(f"Error loading model: {e}")
         return None, str(e)
 
-with st.spinner("Downloading Model..."):
+# Load the model (Cached)
+with st.spinner("Downloading Model... (This may take a minute)"):
     tokenizer, model = load_model()
 
 # 3. SENTIMENT MAPPING
-# Based on your training snippet:
-# 0 -> Negative
-# 1 -> Neutral/Irrelevant
-# 2 -> Positive
 labels_map = {
     0: "Negative",
-    1: "Negative", # We treat Neutral/Irrelevant as Negative to keep strict Binary output
+    1: "Negative", # Treating Neutral as Negative per your logic
     2: "Positive"
 }
 
@@ -46,33 +57,36 @@ user_input = st.text_area("Enter text here:", height=150, placeholder="e.g., The
 if st.button("Analyze Sentiment"):
     if not user_input.strip():
         st.warning("Please enter some text first.")
-    elif isinstance(model, str):
-        st.error(f"Error loading model: {model}")
+    # Check if model loaded successfully (it returns a string error if failed)
+    elif isinstance(model, str) or model is None:
+        st.error(f"Model failed to load. Error: {model}")
     else:
         with st.spinner("Analyzing..."):
-            inputs = tokenizer(user_input, return_tensors="pt", truncation=True, padding=True)
-            
-            with torch.no_grad():
-                outputs = model(**inputs)
-            
-            logits = outputs.logits
-            prediction_id = logits.argmax().item()
-            
-            # Get label from our map
-            sentiment = labels_map.get(prediction_id, "Unknown")
-            
-            # D. Display Result
-            st.divider()
-            st.subheader("Analysis Result:")
-            
-            # Logic: If it is Class 2, it is Positive (Green)
-            if prediction_id == 2:
-                st.success(f"😃 **{sentiment}**")
-            
-            # Logic: If it is Class 0 OR 1, it is Negative (Red)
-            else:
-                st.error(f"😡 **{sentiment}**")
+            try:
+                # Tokenize
+                inputs = tokenizer(user_input, return_tensors="pt", truncation=True, padding=True)
                 
+                # Run Inference on CPU
+                with torch.no_grad():
+                    outputs = model(**inputs)
+                
+                logits = outputs.logits
+                prediction_id = logits.argmax().item()
+                
+                # Get label
+                sentiment = labels_map.get(prediction_id, "Unknown")
+                
+                # Display Result
+                st.divider()
+                st.subheader("Analysis Result:")
+                
+                if prediction_id == 2:
+                    st.success(f"😃 **{sentiment}**")
+                else:
+                    st.error(f"😡 **{sentiment}**")
+            except Exception as e:
+                st.error(f"An error occurred during prediction: {e}")
+
 # Sidebar Info
 st.sidebar.info("Model: BERT Finetuned")
 st.sidebar.text("Classes: Positive / Negative")
